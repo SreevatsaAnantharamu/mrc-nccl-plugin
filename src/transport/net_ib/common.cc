@@ -77,7 +77,8 @@ ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend)
   baseComm->recvMatchingScheme =
     ncclParamIbReceiverSideMatchingScheme() == -2 ? BY_INDEX : ncclParamIbReceiverSideMatchingScheme();
 
-  if (ncclParamIbOooRq() || (ncclParamIbResiliencyPortFailover() == 1)) {
+  if (ncclParamIbOooRq() || (ncclParamIbResiliencyPortFailover() == 1) ||
+      (ncclParamIbPrepostReceiveWorkRequests() == 1)) {
     baseComm->recvMatchingScheme = BY_ID;
     if (ncclParamIbReceiverSideMatchingScheme() == BY_INDEX) {
       INFO(NCCL_NET, "NET/IB: %s: Overriding matching scheme to ID-based (%d)", __func__, BY_ID);
