@@ -23,7 +23,6 @@ extern FILE* ncclDebugFile;
 
 // Standalone plugins receive the logger through the public NET plugin ABI.
 void ncclMrcSetLogger(ncclDebugLogger_t logFunction);
-void ncclMrcLogInitOnce();
 
 #ifdef NCCL_OS_LINUX
 void ncclDebugLog(ncclDebugLogLevel level, unsigned long flags, const char* filefunc, int line, const char* fmt, ...)

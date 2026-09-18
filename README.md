@@ -31,7 +31,7 @@ Hardware-free regression tests:
 make test
 ```
 
-The load test uses `RTLD_NOW` without linking the test executable to libnccl or CUDA. Additional tests cover MRC INIT/RTR/RTS masks, the ordinary verbs GPU-flush path, optional port-speed queries, rank-zero-only NCCL logging, and QP/CC hint payloads and failure cleanup. See [MRC_ENV_VARIABLES.md](MRC_ENV_VARIABLES.md) for the hint toggles and per-QP rate semantics.
+The load test uses `RTLD_NOW` without linking the test executable to libnccl or CUDA. Additional tests cover MRC INIT/RTR/RTS masks, the ordinary verbs GPU-flush path, optional port-speed queries, NCCL logger callback forwarding, and QP/CC hint payloads and failure cleanup. See [MRC_ENV_VARIABLES.md](MRC_ENV_VARIABLES.md) for the hint toggles and per-QP rate semantics.
 
 ## Run (NCCL)
 

@@ -5,10 +5,7 @@
 #include "param.h"
 
 #include <atomic>
-#include <cerrno>
 #include <cstdarg>
-#include <cstdlib>
-#include <mutex>
 #include <pthread.h>
 
 // NCCL's logger owns level/subsystem filtering. Do not access libnccl's
@@ -22,29 +19,6 @@ static std::atomic<ncclDebugLogger_t> pluginLogger{nullptr};
 
 void ncclMrcSetLogger(ncclDebugLogger_t logFunction) {
   pluginLogger.store(logFunction, std::memory_order_release);
-}
-
-void ncclMrcLogInitOnce() {
-  // NET v12 init has no rank argument. Use a launcher-provided GLOBAL rank,
-  // never a local rank (which would print once on every node). Without a
-  // known global rank, omit this optional banner rather than print on all ranks.
-  static std::once_flag once;
-  std::call_once(once, []() {
-    static constexpr const char* rankVariables[] = {
-      "OMPI_COMM_WORLD_RANK", "PMI_RANK", "PMIX_RANK", "RANK", "SLURM_PROCID"
-    };
-    const char* rank = nullptr;
-    for (const char* name : rankVariables) {
-      rank = ncclGetEnv(name);
-      if (rank != nullptr) break;
-    }
-    if (rank == nullptr || *rank == '\0') return;
-    char* end;
-    errno = 0;
-    long value = strtol(rank, &end, 10);
-    if (errno != 0 || end == rank || *end != '\0' || value != 0) return;
-    INFO(NCCL_INIT | NCCL_NET, "NET/MRC: Initializing rebased MRC plugin (v12)");
-  });
 }
 
 static void pluginLog(ncclDebugLogLevel level, unsigned long flags, const char* filefunc, int line,

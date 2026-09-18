@@ -531,7 +531,7 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
   ncclNetCommConfig_t* netCommConfig = nullptr;
 
   ncclMrcSetLogger(logFunction);
-  ncclMrcLogInitOnce();
+  INFO(NCCL_NET, "NET/MRC: Rebased MRC plugin.");
 
   NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
   NCCLCHECK(ncclIbPortRecoveryThreadStart());
