@@ -1,47 +1,64 @@
-# Minimal build for an external NCCL NET plugin.
 #
+# SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# See LICENSE.txt for more license information
+#
+.PHONY: all clean ir-emit
 
-DEBUG ?= 0
-MRC_HOME ?= /opt/mellanox/doca
-CUDA_HOME ?= /usr/local/cuda
-MRC_LIBDIR ?= $(MRC_HOME)/lib/aarch64-linux-gnu
-NCCL_HOME ?= /path/to/nccl/build
+EMIT_LLVM_IR ?= 0
+NCCL_EMIT_LTO_IR ?= 0
 
-CC ?= gcc
-CFLAGS ?= -O2 -fPIC -Wall -Wextra -Wno-unused-parameter -std=gnu11
-ifneq ($(DEBUG),0)
-CFLAGS += -g
+# Set up one make target to avoid race
+IR_GOALS :=
+ifneq ($(EMIT_LLVM_IR), 0)
+IR_GOALS += llvm_ir
+endif
+ifneq ($(NCCL_EMIT_LTO_IR), 0)
+IR_GOALS += ltoir
 endif
 
-CPPFLAGS += -Iinclude -I$(NCCL_HOME)/include -I$(MRC_HOME)/include -I$(CUDA_HOME)/include
-LDFLAGS  += -shared
-LDFLAGS  += -L$(MRC_LIBDIR) -Wl,-rpath,$(MRC_LIBDIR)
-LDLIBS   += -libverbs -lnv_mrc -ldl -lpthread 
+default: src.build
+ifneq ($(IR_GOALS),)
+default: ir-emit
+endif
 
-# Only needed if something in this plugin ends up referencing CUDA runtime
-# symbols (most builds won't). Keeping it as an opt-in knob.
-CUDA_LDFLAGS ?= -L$(CUDA_HOME)/lib64
-CUDA_LDLIBS ?= -lcudart
+install: src.install
+BUILDDIR ?= $(abspath ./build)
+ABSBUILDDIR := $(abspath $(BUILDDIR))
+TARGETS := src pkg nccl4py ir
+clean: ${TARGETS:%=%.clean}
+examples.build: src.build
+ir.build: src.build
+ir.llvm_ir: src.build
+ir.ltoir: src.build
+LICENSE_FILES := LICENSE.txt
+LICENSE_TARGETS := $(LICENSE_FILES:%=$(BUILDDIR)/%)
+lic: $(LICENSE_TARGETS)
 
-TARGET = libnccl-net-mrc.so
-SRCS   = \
-	src/net_mrc_plugin.c \
-	src/p2p_plugin.c \
-	src/param.c \
-	src/utils.c \
-	src/socket.c \
-	src/ibvwrap.c
-OBJS   = $(SRCS:.c=.o)
+${BUILDDIR}/%.txt: %.txt
+	@printf "Copying    %-35s > %s\n" $< $@
+	mkdir -p ${BUILDDIR}
+	install -m 644 $< $@
 
-all: $(TARGET)
+src.%:
+	${MAKE} -C src $* BUILDDIR=${ABSBUILDDIR}
 
-$(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+examples: src.build
+	${MAKE} -C docs/examples NCCL_HOME=${ABSBUILDDIR}
 
-%.o: %.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+pkg.%:
+	${MAKE} -C pkg $* BUILDDIR=${ABSBUILDDIR}
 
-clean:
-	rm -f $(OBJS) $(TARGET)
+nccl4py.%:
+	${MAKE} -C bindings/nccl4py $* BUILDDIR=${ABSBUILDDIR}
 
-.PHONY: all clean
+# IR generation requires src.build first
+ir.%:
+	${MAKE} -C bindings/ir $* BUILDDIR=${ABSBUILDDIR}
+
+ir-emit: src.build
+	${MAKE} -C bindings/ir $(IR_GOALS) BUILDDIR=${ABSBUILDDIR}
+
+pkg.debian.prep: lic
+pkg.txz.prep: lic
