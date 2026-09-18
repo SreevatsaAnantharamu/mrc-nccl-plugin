@@ -7,6 +7,7 @@
 
 #include "common.h"
 #include "p2p_resiliency_recovery.h"
+#include "version.h"
 
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
@@ -531,7 +532,13 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
   ncclNetCommConfig_t* netCommConfig = nullptr;
 
   ncclMrcSetLogger(logFunction);
-  INFO(NCCL_NET, "NET/MRC: Rebased MRC plugin.");
+
+  // Initialization code that should run only once
+  static std::once_flag initFlag;
+  std::call_once(initFlag, []() {
+    WARN("NET/MRC: Initializing MRC plugin version %d.%d.%d", 
+      MRC_NCCL_PLUGIN_VERSION_MAJOR, MRC_NCCL_PLUGIN_VERSION_MINOR, MRC_NCCL_PLUGIN_VERSION_PATCH);
+  });
 
   NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
   NCCLCHECK(ncclIbPortRecoveryThreadStart());
