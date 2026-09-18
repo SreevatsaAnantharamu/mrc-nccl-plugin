@@ -186,6 +186,144 @@ ncclResult_t wrap_ibv_query_qp(struct ibv_qp* qp, struct ibv_qp_attr* attr, int 
                           "ibv_query_qp");
 }
 
+ncclResult_t wrap_mrc_create_context(struct ibv_context* context, struct mrc_context** mrcContext) {
+  if (context == NULL) return ncclInternalError;
+
+  struct mrc_attr attr;
+  int supported = 0;
+  int ret = mrc_query_device(context, &attr, &supported);
+  if (ret != 0 || !supported) {
+    WARN("NET/IB : MRC device query failed or MRC is unsupported (error %d, supported %d)", ret, supported);
+    return ncclSystemError;
+  }
+
+  struct mrc_context_attr contextAttr;
+  memset(&contextAttr, 0, sizeof(contextAttr));
+#ifdef MRC_API_VER_USED
+  contextAttr.mrc_api_version_used = MRC_API_VER_USED;
+#endif
+  *mrcContext = mrc_create_context(context, &contextAttr);
+  if (*mrcContext == NULL) {
+    WARN("NET/IB : MRC context creation failed");
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_destroy_context(struct mrc_context* mrcContext) {
+  int ret = mrc_destroy_context(mrcContext);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_destroy_context failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_create_cq(struct mrc_cq** ret, struct mrc_context* mrcContext, int cqe, void* cqContext,
+                                struct mrc_comp_channel* channel, int compVector) {
+  *ret = mrc_create_cq(mrcContext, cqe, cqContext, channel, compVector);
+  if (*ret == NULL) {
+    WARN("NET/IB : mrc_create_cq failed");
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_destroy_cq(struct mrc_cq* cq) {
+  int ret = mrc_destroy_cq(cq);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_destroy_cq failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_create_qp_hint(struct mrc_qp_hint** ret, struct mrc_context* mrcContext,
+                                     struct mrc_qp_hint_init_attr* hintInitAttr) {
+  *ret = mrc_create_qp_hint(mrcContext, hintInitAttr);
+  if (*ret == nullptr) {
+    WARN("NET/MRC: mrc_create_qp_hint failed: %s", strerror(errno));
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_destroy_qp_hint(struct mrc_qp_hint* hint) {
+  if (hint == nullptr) return ncclSuccess;
+  int ret = mrc_destroy_qp_hint(hint);
+  if (ret != 0) {
+    WARN("NET/MRC: mrc_destroy_qp_hint failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_create_qp(struct mrc_qp** ret, struct mrc_context* mrcContext,
+                                struct mrc_qp_init_attr* qpInitAttr) {
+  *ret = mrc_create_qp(mrcContext, qpInitAttr);
+  if (*ret == NULL) {
+    WARN("NET/IB : mrc_create_qp failed");
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_modify_qp(struct mrc_qp* qp, struct ibv_qp_attr* attr, int attrMask,
+                                struct mrc_qp_attr* mrcAttr, int mrcAttrMask) {
+  int ret = mrc_modify_qp(qp, attr, attrMask, mrcAttr, mrcAttrMask);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_modify_qp failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_destroy_qp(struct mrc_qp* qp) {
+  int ret = mrc_destroy_qp(qp);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_destroy_qp failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_get_qpn(struct mrc_qp* qp, uint32_t* qpn) {
+  int ret = mrc_get_qpn(qp, qpn);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_get_qpn failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_post_send(struct mrc_qp* qp, struct ibv_send_wr* wr, struct ibv_send_wr** badWr) {
+  int ret = mrc_post_send(qp, wr, badWr);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_post_send failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_post_recv(struct mrc_qp* qp, struct ibv_recv_wr* wr, struct ibv_recv_wr** badWr) {
+  int ret = mrc_post_recv(qp, wr, badWr);
+  if (ret != 0) {
+    WARN("NET/IB : mrc_post_recv failed with error %d", ret);
+    return ncclSystemError;
+  }
+  return ncclSuccess;
+}
+
+ncclResult_t wrap_mrc_poll_cq(struct mrc_cq* cq, int numEntries, struct ibv_wc* wc, int* numDone) {
+  int done = mrc_poll_cq(cq, numEntries, wc);
+  if (done < 0) {
+    WARN("NET/IB : mrc_poll_cq failed with error %d", done);
+    return ncclSystemError;
+  }
+  *numDone = done;
+  return ncclSuccess;
+}
+
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd** ret, struct ibv_context* context) {
   IBV_PTR_CHECK_ERRNO(ibvSymbols, ibv_internal_alloc_pd, ibv_internal_alloc_pd(context), *ret, NULL, "ibv_alloc_pd");
 }
@@ -398,12 +536,25 @@ ncclResult_t wrap_ibv_set_ece(
                                    supported);
 }
 
-ncclResult_t wrap_ibv_query_port_speed(struct ibv_context* context, uint8_t port_num, uint64_t* speed) {
+ncclResult_t wrap_ibv_query_port_speed(struct ibv_context* context, uint32_t port_num, uint64_t* speed) {
+  *speed = 0;
   if (!ncclParamIbQueryPortSpeed() || ibvSymbols.ibv_internal_query_port_speed == NULL) {
     return ncclSystemError;
   }
-  IBV_INT_CHECK_RET_ERRNO(ibvSymbols, ibv_internal_query_port_speed,
-                          ibv_internal_query_port_speed(context, port_num, speed), 0, "ibv_query_port_speed");
+  int ret = ibvSymbols.ibv_internal_query_port_speed(context, port_num, speed);
+  if (ret == 0) return ncclSuccess;
+
+  int error = ret == -1 ? errno : (ret < 0 ? -ret : ret);
+  *speed = 0;
+  // A present rdma-core symbol does not imply support in the device/provider.
+  // Initialization already falls back to active_speed[_ex] and active_width,
+  // which is how the legacy MRC plugin always determined the port speed.
+  if (error == EOPNOTSUPP || error == EPROTONOSUPPORT || error == ENOSYS) {
+    INFO(NCCL_NET, "NET/IB : ibv_query_port_speed unsupported on port %u; using port attributes", port_num);
+  } else {
+    WARN("Call to ibv_query_port_speed failed with error %s errno %d", strerror(error), error);
+  }
+  return ncclSystemError;
 }
 
 ncclResult_t wrap_ibv_event_type_str(char** ret, enum ibv_event_type event) {

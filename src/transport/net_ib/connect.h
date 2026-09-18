@@ -16,6 +16,9 @@ struct ncclIbQpCreateAttr {
   enum ibv_qp_type type;
   bool oooRq;
   struct ibv_cq* cq;
+  struct mrc_context* mrcContext;
+  struct mrc_cq* mrcCq;
+  int numQpsPerPeer; // Total negotiated data QPs, including all merged devices.
   struct ibv_pd* pd;
   uint32_t maxRecvWorkRequest;
   uint32_t maxSendWorkRequest;
@@ -69,6 +72,7 @@ struct ncclIbConnectionMetadata {
 };
 
 ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* createQpAttrs);
+ncclResult_t ncclIbQpDestroy(struct ncclIbQp* qp);
 ncclResult_t ncclIbQpInit(struct ncclIbQp* qp);
 ncclResult_t ncclIbQpRtr(struct ncclIbQp* qp);
 ncclResult_t ncclIbQpRts(struct ncclIbQp* qp);

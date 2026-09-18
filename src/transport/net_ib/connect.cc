@@ -22,6 +22,11 @@ NCCL_PARAM(IbSl, "IB_SL", -1);
 NCCL_PARAM(IbTc, "IB_TC", -1);
 NCCL_PARAM(IbFifoTc, "IB_FIFO_TC", -1);
 NCCL_PARAM(IbEceEnable, "IB_ECE_ENABLE", 1);
+NCCL_PARAM(MrcTimeout, "MRC_TIMEOUT", 20);
+NCCL_PARAM(MrcQpHintEnable, "MRC_QP_HINT_ENABLE", 1);
+NCCL_PARAM(MrcCcInitRate, "MRC_CC_INIT_RATE", 0);
+NCCL_PARAM(MrcCcMinRate, "MRC_CC_MIN_RATE", 0);
+NCCL_PARAM(MrcCcMaxRate, "MRC_CC_MAX_RATE", 0);
 
 extern int64_t ncclParamIbOooRq();
 
@@ -76,6 +81,7 @@ ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base
 
   ncclIbGidInfoSnapshot(base, ibDev);
 
+  NCCLCHECK(wrap_mrc_create_cq(&base->mrcCq, ibDev->mrcContext, cqSize, cq_context, NULL, 0));
   NCCLCHECK(wrap_ibv_create_cq(&base->cq, ibDev->context, cqSize, cq_context, NULL, 0));
 
   NCCLCHECK(ncclIbGetPkeyIndex(ibDev->context, ibDev->portNum, &ibDev->portAttr, &base->pkeyIndex));
@@ -84,6 +90,7 @@ ncclResult_t ncclIbInitCommDevBase(int ibDevN, struct ncclIbNetCommDevBase* base
 }
 
 ncclResult_t ncclIbDestroyBase(struct ncclIbNetCommDevBase* base) {
+  NCCLCHECK(wrap_mrc_destroy_cq(base->mrcCq));
   NCCLCHECK(wrap_ibv_destroy_cq(base->cq));
 
   std::lock_guard<std::mutex> lock(ncclIbDevs[base->ibDevN].mutex);
@@ -374,7 +381,15 @@ ncclResult_t ncclIbQpInit(struct ncclIbQp* qp) {
   qpAttr.pkey_index = initAttr->pkeyIndex;
   qpAttr.port_num = initAttr->portNum;
   qpAttr.qp_access_flags = initAttr->qpAccessFlags;
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS));
+  int attrMask = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+  if (qp->mrcQp) {
+    struct mrc_qp_attr mrcAttr = {};
+    mrcAttr.qp_hint = qp->mrcQpHint;
+    NCCLCHECK(wrap_mrc_modify_qp(qp->mrcQp, &qpAttr, attrMask, &mrcAttr,
+                                qp->mrcQpHint ? MRC_QP_HINT : 0));
+  } else {
+    NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, attrMask));
+  }
   return ncclSuccess;
 }
 
@@ -408,10 +423,108 @@ static ncclResult_t ncclIbCreateQpMlx5(struct ncclIbQpCreateAttr* createQpAttrs,
   return ncclSuccess;
 }
 
+// Version-1 vendor payload used by the legacy net_mrc_plugin.c. Keep the
+// reserved bytes zero and preserve the per-connection MIN_RATE semantics.
+struct ncclMrcCcHint {
+  uint8_t version;
+  uint8_t reserved[3];
+  uint32_t initRate;
+  uint32_t minRate;
+  uint32_t maxRate;
+};
+static_assert(sizeof(ncclMrcCcHint) == 16 && sizeof(ncclMrcCcHint) <= MRC_MAX_VENDOR_CFG_SIZE,
+              "MRC CC hint must match the version-1 vendor ABI");
+
+static ncclResult_t ncclIbQpCreateMrcHint(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* attrs) {
+  if (!ncclParamMrcQpHintEnable()) return ncclSuccess;
+  if (attrs->numQpsPerPeer <= 0 || attrs->numQpsPerPeer > NCCL_IB_MAX_QPS) {
+    WARN("NET/MRC: Invalid QP count %d for QP hints", attrs->numQpsPerPeer);
+    return ncclInvalidUsage;
+  }
+
+  int64_t initRate = ncclParamMrcCcInitRate();
+  int64_t minRate = ncclParamMrcCcMinRate();
+  int64_t maxRate = ncclParamMrcCcMaxRate();
+  if (initRate < 0 || minRate < 0 || maxRate < 0 || initRate > UINT32_MAX || maxRate > UINT32_MAX ||
+      minRate / attrs->numQpsPerPeer > UINT32_MAX) {
+    WARN("NET/MRC: CC rates must be nonnegative and fit uint32_t per QP (INIT=%lld MIN=%lld MAX=%lld nqps=%d)",
+         (long long)initRate, (long long)minRate, (long long)maxRate, attrs->numQpsPerPeer);
+    return ncclInvalidUsage;
+  }
+  minRate /= attrs->numQpsPerPeer;
+
+  struct mrc_qp_hint_init_attr hintInit = {};
+  hintInit.attr.num_qps_per_peer = attrs->numQpsPerPeer;
+  hintInit.attr.num_send_peers = 1;
+  if (initRate || minRate || maxRate) {
+    ncclMrcCcHint ccHint = {};
+    ccHint.version = 1;
+    ccHint.initRate = (uint32_t)initRate;
+    ccHint.minRate = (uint32_t)minRate;
+    ccHint.maxRate = (uint32_t)maxRate;
+    memcpy(hintInit.attr.vendor_cfg, &ccHint, sizeof(ccHint));
+  }
+  INFO(NCCL_NET, "NET/MRC: QP hint num_qps_per_peer=%d num_send_peers=1 ccInitRate=%u ccMinRate=%u ccMaxRate=%u",
+       attrs->numQpsPerPeer, (uint32_t)initRate, (uint32_t)minRate, (uint32_t)maxRate);
+  // Like the legacy plugin, a rejected hint is an error, not an unannounced
+  // fallback that discards the requested congestion-control configuration.
+  return wrap_mrc_create_qp_hint(&qp->mrcQpHint, attrs->mrcContext, &hintInit);
+}
+
+ncclResult_t ncclIbQpDestroy(struct ncclIbQp* qp) {
+  if (qp->mrcQp != nullptr) {
+    NCCLCHECK(wrap_mrc_destroy_qp(qp->mrcQp));
+    qp->mrcQp = nullptr;
+  }
+  if (qp->qp != nullptr) {
+    NCCLCHECK(wrap_ibv_destroy_qp(qp->qp));
+    qp->qp = nullptr;
+  }
+  // Destroying an attached hint first returns EBUSY. If QP destruction fails,
+  // leave its hint intact for a subsequent cleanup attempt.
+  if (qp->mrcQpHint != nullptr) {
+    NCCLCHECK(wrap_mrc_destroy_qp_hint(qp->mrcQpHint));
+    qp->mrcQpHint = nullptr;
+  }
+  return ncclSuccess;
+}
+
+static ncclResult_t ncclIbDestroyDataQps(struct ncclIbNetCommBase* base) {
+  ncclResult_t result = ncclSuccess;
+  for (int q = 0; q < base->nqps && q < NCCL_IB_MAX_QPS; q++) {
+    ncclResult_t ret = ncclIbQpDestroy(&base->qps[q]);
+    // Attempt every QP even if the provider rejects one destruction.
+    if (result == ncclSuccess) result = ret;
+  }
+  return result;
+}
+
 ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* createQpAttrs) {
   ncclIbWqeLatMonInit(&qp->latMon);
+  if (createQpAttrs->mrcContext) {
+    if (createQpAttrs->oooRq) {
+      WARN("NET/IB: MRC data QPs do not support NCCL_IB_OOO_RQ");
+      return ncclInvalidUsage;
+    }
+    struct mrc_qp_init_attr qpInitAttr = {};
+    qpInitAttr.qp_context = createQpAttrs->qpContext;
+    qpInitAttr.send_cq = createQpAttrs->mrcCq;
+    qpInitAttr.recv_cq = createQpAttrs->mrcCq;
+    qpInitAttr.pd = createQpAttrs->pd;
+    qpInitAttr.cap.max_recv_wr = createQpAttrs->maxRecvWorkRequest;
+    qpInitAttr.cap.max_send_wr = createQpAttrs->maxSendWorkRequest;
+    qpInitAttr.cap.max_send_sge = 1;
+    qpInitAttr.cap.max_recv_sge = 1;
+    qpInitAttr.cap.max_inline_data = ncclParamIbUseInline() ? sizeof(struct ncclIbSendFifo) : 0;
+    NCCLCHECK(ncclIbQpCreateMrcHint(qp, createQpAttrs));
+    ncclResult_t ret = wrap_mrc_create_qp(&qp->mrcQp, createQpAttrs->mrcContext, &qpInitAttr);
+    if (ret == ncclSuccess) ret = wrap_mrc_get_qpn(qp->mrcQp, &qp->qpn);
+    if (ret != ncclSuccess) (void)ncclIbQpDestroy(qp);
+    return ret;
+  }
   if (createQpAttrs->oooRq) {
     NCCLCHECK(ncclIbCreateQpMlx5(createQpAttrs, qp));
+    qp->qpn = qp->qp->qp_num;
     return ncclSuccess;
   }
   struct ibv_qp_init_attr qpInitAttr;
@@ -426,6 +539,7 @@ ncclResult_t ncclIbQpCreate(struct ncclIbQp* qp, struct ncclIbQpCreateAttr* crea
   qpInitAttr.cap.max_recv_sge = 1;
   qpInitAttr.cap.max_inline_data = ncclParamIbUseInline() ? sizeof(struct ncclIbSendFifo) : 0;
   NCCLCHECK(wrap_ibv_create_qp(&qp->qp, createQpAttrs->pd, &qpInitAttr));
+  qp->qpn = qp->qp->qp_num;
   return ncclSuccess;
 }
 
@@ -438,7 +552,7 @@ ncclResult_t ncclIbQpRtr(struct ncclIbQp* qp) {
   qpAttr.path_mtu = rtrAttr->mtu;
   qpAttr.dest_qp_num = rtrAttr->remoteQpNum;
   qpAttr.rq_psn = 0;
-  if (qp->qp->qp_type != IBV_QPT_UC) {
+  if (qp->mrcQp || qp->qp->qp_type != IBV_QPT_UC) {
     qpAttr.max_dest_rd_atomic = 1;
     qpAttr.min_rnr_timer = 12;
     attrMask |= IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
@@ -479,10 +593,18 @@ ncclResult_t ncclIbQpRtr(struct ncclIbQp* qp) {
   qpAttr.ah_attr.sl = rtrAttr->sl;
   qpAttr.ah_attr.src_path_bits = 0;
   qpAttr.ah_attr.port_num = rtrAttr->localIbPort;
-  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qp->qp_num,
+  TRACE(NCCL_NET, "NET/IB: %s: qpn=%u mtu=%d dst=%u ll=%u port=%u sl: %d tc: %d", __func__, qp->qpn,
         qpAttr.path_mtu, qpAttr.dest_qp_num, rtrAttr->linkLayer, qpAttr.ah_attr.port_num, qpAttr.ah_attr.sl,
         qpAttr.ah_attr.grh.traffic_class);
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, attrMask));
+  if (qp->mrcQp) {
+    struct mrc_qp_attr mrcAttr = {};
+    // MRC supports writes, not RC read/atomic responder resources. Keep
+    // this mask consistent with the original MRC plugin's RTR transition.
+    attrMask &= ~IBV_QP_MAX_DEST_RD_ATOMIC;
+    NCCLCHECK(wrap_mrc_modify_qp(qp->mrcQp, &qpAttr, attrMask, &mrcAttr, 0));
+  } else {
+    NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, attrMask));
+  }
   return ncclSuccess;
 }
 
@@ -492,7 +614,7 @@ ncclResult_t ncclIbQpRts(struct ncclIbQp* qp) {
   int attrMask = IBV_QP_STATE | IBV_QP_SQ_PSN;
   memset(&qpAttr, 0, sizeof(struct ibv_qp_attr));
   qpAttr.qp_state = IBV_QPS_RTS;
-  if (qp->qp->qp_type != IBV_QPT_UC) {
+  if (qp->mrcQp || qp->qp->qp_type != IBV_QPT_UC) {
     qpAttr.timeout = rtsAttr->timeout;
     qpAttr.retry_cnt = rtsAttr->retryCnt;
     qpAttr.rnr_retry = 7;
@@ -500,7 +622,14 @@ ncclResult_t ncclIbQpRts(struct ncclIbQp* qp) {
     attrMask |= IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC;
   }
   qpAttr.sq_psn = 0;
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, attrMask));
+  if (qp->mrcQp) {
+    struct mrc_qp_attr mrcAttr = {};
+    mrcAttr.timeout = ncclParamMrcTimeout();
+    int mrcAttrMask = IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY;
+    NCCLCHECK(wrap_mrc_modify_qp(qp->mrcQp, &qpAttr, mrcAttrMask, &mrcAttr, MRC_QP_TIMEOUT));
+  } else {
+    NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &qpAttr, attrMask));
+  }
   return ncclSuccess;
 }
 
@@ -508,7 +637,12 @@ ncclResult_t ncclIbQpReset(struct ncclIbQp* qp) {
   struct ibv_qp_attr attr;
   memset(&attr, 0, sizeof(attr));
   attr.qp_state = IBV_QPS_RESET;
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &attr, IBV_QP_STATE));
+  if (qp->mrcQp) {
+    struct mrc_qp_attr mrcAttr = {};
+    NCCLCHECK(wrap_mrc_modify_qp(qp->mrcQp, &attr, IBV_QP_STATE, &mrcAttr, 0));
+  } else {
+    NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &attr, IBV_QP_STATE));
+  }
   return ncclSuccess;
 }
 
@@ -516,7 +650,12 @@ ncclResult_t ncclIbQpError(struct ncclIbQp* qp) {
   struct ibv_qp_attr attr;
   memset(&attr, 0, sizeof(attr));
   attr.qp_state = IBV_QPS_ERR;
-  NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &attr, IBV_QP_STATE));
+  if (qp->mrcQp) {
+    struct mrc_qp_attr mrcAttr = {};
+    NCCLCHECK(wrap_mrc_modify_qp(qp->mrcQp, &attr, IBV_QP_STATE, &mrcAttr, 0));
+  } else {
+    NCCLCHECK(wrap_ibv_modify_qp(qp->qp, &attr, IBV_QP_STATE));
+  }
   return ncclSuccess;
 }
 
@@ -680,6 +819,7 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
   struct ncclIbQpCreateAttr qpCreateAttrs;
   memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
+  qpCreateAttrs.numQpsPerPeer = nqps;
   qpCreateAttrs.maxRecvWorkRequest = 0;
   // Send requests are sent using at most 2 messages (RDMA Write and RDMA Write with Immediate)
   qpCreateAttrs.maxSendWorkRequest = 2 * NET_IB_MAX_REQUESTS;
@@ -696,6 +836,8 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     ncclIbQpInfo* localQpInfo = &meta->qpInfo[qpIndex];
 
     qpCreateAttrs.cq = commDev->base.cq;
+    qpCreateAttrs.mrcContext = ibDev->mrcContext;
+    qpCreateAttrs.mrcCq = commDev->base.mrcCq;
     qpCreateAttrs.pd = commDev->base.pd;
     qpCreateAttrs.qpContext = &comm->base.stats;
 
@@ -718,12 +860,12 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     INFO(NCCL_NET,
          "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p oooRq=%d",
          __func__, ibDev->portNum, commDev->base.ibDevN, ncclIbDevs[commDev->base.ibDevN].devName, ncclNIbDevs,
-         ncclNMergedIbDevs, localQp->qp->qp_num, (uint16_t)commDev->base.pkeyIndex, commDev->base.pd,
+         ncclNMergedIbDevs, localQp->qpn, (uint16_t)commDev->base.pkeyIndex, commDev->base.pd,
          qpCreateAttrs.oooRq);
     localQp->devIndex = devIndex;
 
     // Populate the metadata that will be delivered to the remote peer
-    localQpInfo->qpn = localQp->qp->qp_num;
+    localQpInfo->qpn = localQp->qpn;
     localQpInfo->devIndex = localQp->devIndex;
 
     // Transition the QP to INIT state
@@ -734,7 +876,7 @@ static ncclResult_t ncclIbSenderQpsCreate(ncclIbSendComm* comm, struct ncclIbCon
     initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE;
     NCCLCHECK(ncclIbQpInit(localQp));
 
-    if (ncclParamIbEceEnable()) {
+    if (ncclParamIbEceEnable() && localQp->qp) {
       // Query ECE (Enhanced Connection Establishment) capabilities and
       // populate the initial ECE into the metadata structure that is sent to
       // the remote (receiver) side.
@@ -774,11 +916,11 @@ static ncclResult_t ncclIbSenderQpsToRts(ncclIbSendComm* comm, struct ncclIbConn
 
     localQp->remDevIdx = remQpInfo->devIndex;
 
-    if (localQp->eceSupported && remQpInfo->ece_supported) {
+    if (localQp->qp && localQp->eceSupported && remQpInfo->ece_supported) {
       INFO(NCCL_NET,
            "NET/IB: %s: Set ECE: IbDev %d Port %d qp_num %d set_ece={supported=%d, vendor_id=0x%x, options=0x%x, "
            "comp_mask=0x%x}",
-           __func__, commDev->base.ibDevN, ibDev->portNum, localQp->qp->qp_num, remQpInfo->ece_supported,
+           __func__, commDev->base.ibDevN, ibDev->portNum, localQp->qpn, remQpInfo->ece_supported,
            remQpInfo->ece.vendor_id, remQpInfo->ece.options, remQpInfo->ece.comp_mask);
       // Set the reduced ECE received from the receiver side
       NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQp->eceSupported));
@@ -1126,6 +1268,7 @@ exit:
   stage->state = ncclIbCommStateStart;
   return ret;
 fail:
+  if (comm) (void)ncclIbDestroyDataQps(&comm->base);
   free(comm);
   goto exit;
 }
@@ -1194,6 +1337,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
   struct ncclIbQpCreateAttr qpCreateAttrs;
   memset(&qpCreateAttrs, 0, sizeof(struct ncclIbQpCreateAttr));
   qpCreateAttrs.type = IBV_QPT_RC;
+  qpCreateAttrs.numQpsPerPeer = nqps;
   qpCreateAttrs.maxRecvWorkRequest = NET_IB_MAX_REQUESTS;
   // CTS messages are posted using send work requests.
   // Note that because only specific CTS messages are signaled, the send queue
@@ -1222,6 +1366,8 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     localQp->devIndex = devIndex;
 
     qpCreateAttrs.cq = rCommDev->base.cq;
+    qpCreateAttrs.mrcContext = ibDev->mrcContext;
+    qpCreateAttrs.mrcCq = rCommDev->base.mrcCq;
     qpCreateAttrs.pd = rCommDev->base.pd;
     qpCreateAttrs.qpContext = &rComm->base.stats;
     if (rComm->base.resiliency) {
@@ -1253,10 +1399,10 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     INFO(NCCL_NET,
          "NET/IB: %s: QP created: port=%d dev=%d devName=%s ndevs=%d nmdevs=%d qp_num=%u pkey=%u pd=%p oooRq=%d",
          __func__, ibDev->portNum, rCommDev->base.ibDevN, ncclIbDevs[rCommDev->base.ibDevN].devName, ncclNIbDevs,
-         ncclNMergedIbDevs, localQp->qp->qp_num, (uint16_t)rCommDev->base.pkeyIndex, rCommDev->base.pd,
+            ncclNMergedIbDevs, localQp->qpn, (uint16_t)rCommDev->base.pkeyIndex, rCommDev->base.pd,
          qpCreateAttrs.oooRq);
 
-    localQpInfo->qpn = localQp->qp->qp_num;
+          localQpInfo->qpn = localQp->qpn;
     localQpInfo->devIndex = localQp->devIndex;
 
     // Transition the QP to INIT state
@@ -1268,7 +1414,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
     initAttr->qpAccessFlags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC | IBV_ACCESS_REMOTE_READ;
     NCCLCHECK(ncclIbQpInit(localQp));
 
-    if (remQpInfo->ece_supported) {
+    if (localQp->qp && remQpInfo->ece_supported) {
       // Set the ECE received from the remote (sender) side.
       // coverity[copy_paste_error]
       NCCLCHECK(wrap_ibv_set_ece(localQp->qp, &remQpInfo->ece, &localQpInfo->ece_supported));
@@ -1303,7 +1449,7 @@ static ncclResult_t ncclIbReceiverQpsCreateToRts(ncclIbRecvComm* rComm, struct n
 
     // Query the reduced ECE by the device and storing it in the local QP info
     // to return it to the requestor (sender).
-    if (remQpInfo->ece_supported && localQpInfo->ece_supported) {
+    if (localQp->qp && remQpInfo->ece_supported && localQpInfo->ece_supported) {
       NCCLCHECK(wrap_ibv_query_ece(localQp->qp, &localQpInfo->ece, &localQpInfo->ece_supported));
       // Store the reduced ECE locally as well
       localQp->ece = localQpInfo->ece;
@@ -1397,9 +1543,10 @@ ncclResult_t ncclIbPostReceiveWorkRequestsOnQp(struct ncclIbRecvComm* recvComm, 
     NCCLCHECK(ncclIbResiliencyDataRqSizeGet(recvComm->base.resiliency, dataQp->devIndex, &nRecvWorkRequestsPerQp));
   }
   INFO(NCCL_NET, "NET/IB: %s: Pre-posting %d Receive WQEs on QP (qp_num=%d, comm=%p)", __func__, nRecvWorkRequestsPerQp,
-       dataQp->qp->qp_num, recvComm);
+       dataQp->qpn, recvComm);
   for (int j = 0; j < nRecvWorkRequestsPerQp; j++) {
-    NCCLCHECK(ncclIbPostRecvWorkRequest(dataQp->qp, &recvComm->ibRecvWorkRequest));
+    struct ibv_recv_wr* badWr;
+    NCCLCHECK(wrap_mrc_post_recv(dataQp->mrcQp, &recvComm->ibRecvWorkRequest, &badWr));
   }
   return ncclSuccess;
 }
@@ -1707,6 +1854,7 @@ exit:
   lComm->stage = NULL;
   return ret;
 fail:
+  if (rComm) (void)ncclIbDestroyDataQps(&rComm->base);
   free(rComm);
   goto exit;
 }
@@ -1723,9 +1871,7 @@ ncclResult_t ncclIbCloseSend(void* sendComm) {
 
     NCCLCHECK(ncclSocketClose(&comm->base.sock));
 
-    for (int q = 0; q < comm->base.nqps; q++) {
-      if (comm->base.qps[q].qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->base.qps[q].qp));
-    }
+    NCCLCHECK(ncclIbDestroyDataQps(&comm->base));
 
     if (comm->base.resiliency) {
       NCCLCHECK(ncclIbResiliencyClose(comm->base.resiliency));
@@ -1759,9 +1905,7 @@ ncclResult_t ncclIbCloseRecv(void* recvComm) {
   if (comm) {
     NCCLCHECK(ncclSocketClose(&comm->base.sock));
 
-    for (int q = 0; q < comm->base.nqps; q++) {
-      if (comm->base.qps[q].qp != NULL) NCCLCHECK(wrap_ibv_destroy_qp(comm->base.qps[q].qp));
-    }
+    NCCLCHECK(ncclIbDestroyDataQps(&comm->base));
 
     if (comm->base.resiliency) {
       NCCLCHECK(ncclIbResiliencyClose(comm->base.resiliency));

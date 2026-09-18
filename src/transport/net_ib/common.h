@@ -91,6 +91,7 @@ struct alignas(64) ncclIbDev {
   int speed;
   uint64_t currSpeed;
   ibv_context* context;
+  struct mrc_context* mrcContext;
   int pdRefs;
   ibv_pd* pd;
   char devName[MAXNAMESIZE];
@@ -253,6 +254,7 @@ struct ncclIbNetCommDevBase {
   int ibDevN;
   struct ibv_pd* pd;
   struct ibv_cq* cq;
+  struct mrc_cq* mrcCq;
   uint64_t pad[2];
   struct ncclIbGidInfo gidInfo;
   // Resolved once at device init and reused by every QP (like the GID index above).
@@ -304,6 +306,10 @@ struct ncclIbQpRtsAttr {
 
 struct ncclIbQp {
   struct ibv_qp* qp;
+  struct mrc_qp* mrcQp;
+  // Owned by this QP; release only after the provider QP is destroyed.
+  struct mrc_qp_hint* mrcQpHint;
+  uint32_t qpn;
   // The index of the device on which this QP was created on.
   int devIndex;
 
@@ -490,7 +496,7 @@ static inline ncclResult_t ncclIbCommBaseGetQpByQpNum(struct ncclIbNetCommBase* 
         commBase->nqps / commBase->vProps.ndevs);
   for (int qpIndexInDev = 0; qpIndexInDev < (commBase->nqps / commBase->vProps.ndevs); qpIndexInDev++) {
     *qp = &(commBase->qps[commBase->vProps.ndevs * qpIndexInDev + devIndex]);
-    if ((*qp)->qp->qp_num == qpNum) {
+    if ((*qp)->qpn == qpNum) {
       if (qpIndex != NULL) {
         *qpIndex = *qp - commBase->qps;
       }

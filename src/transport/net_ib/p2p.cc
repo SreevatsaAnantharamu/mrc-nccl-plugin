@@ -167,7 +167,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
     TRACE(NCCL_NET,
           "NET/IB: %s: Posting send (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, wr_id=%ld) on QP (qp_num=%u, "
           "devIndex=%d, qpIndex=%d)",
-          __func__, reqs[0], reqs[0]->base, reqs[0]->id, slot, nreqs, wr_id, qp->qp->qp_num, qp->devIndex, qpIndex);
+          __func__, reqs[0], reqs[0]->base, reqs[0]->id, slot, nreqs, wr_id, qp->qpn, qp->devIndex, qpIndex);
 
     int devIndex = qp->devIndex;
     int origDevIndex = comm->base.qps[qpIndex].devIndex;
@@ -223,7 +223,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
         reqs[r]->pInfo[0].data.qp.device = devIndex;
         reqs[r]->pInfo[0].data.qp.wr_id = comm->wrs[r].wr_id;
         reqs[r]->pInfo[0].data.qp.opcode = comm->wrs[r].opcode;
-        reqs[r]->pInfo[0].data.qp.qpNum = qp->qp->qp_num;
+        reqs[r]->pInfo[0].data.qp.qpNum = qp->qpn;
         reqs[r]->pInfo[0].data.qp.length = comm->sges[r].length;
         void* pHandle = reqs[r]->pInfo[0].pHandle;
         NCCLCHECK(ncclProfilerFunction(&reqs[r]->pInfo[0].qpEventHandles[nEventHandles], ncclProfilerNetEventStart,
@@ -235,7 +235,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       for (int r = 0; r < nreqs; r++) {
         TRACE(NCCL_NET,
               "NET/IB: %s: Posting send work request on QP (qpn=%u, devIndex=%d, qpIndex=%d) (slot=%d, req[r=%d]=%p)",
-              __func__, qp->qp->qp_num, qp->devIndex, qpIndex, slot, r, reqs[r]);
+              __func__, qp->qpn, qp->devIndex, qpIndex, slot, r, reqs[r]);
       }
       int wrIdx = 0;
       char wrStr[1024];
@@ -248,7 +248,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
       }
 #endif // ENABLE_TRACE
       if (ncclIbWqeLatEnabled) ncclIbWqeLatMonStampSend(qp, comm->wrs);
-      NCCLCHECK(wrap_ibv_post_send(qp->qp, comm->wrs, &bad_wr));
+      NCCLCHECK(wrap_mrc_post_send(qp->mrcQp, comm->wrs, &bad_wr));
     }
 
     // Update the send offset and addresses for the next QP according to the
@@ -261,7 +261,7 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
             "NET/IB: %s: Send request (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, reqIdx=%d, wr_id=%ld) posted %d "
             "bytes on QP index %d (devIndex=%d, qp_num=%u), total posted %d/%d bytes",
             __func__, reqs[r], reqs[0]->base, reqs[r]->id, slot, nreqs, r, comm->wrs[r].wr_id,
-            comm->wrs[r].sg_list->length, qpIndex, devIndex, qp->qp->qp_num, sendOffsets[r], reqs[r]->send.size);
+            comm->wrs[r].sg_list->length, qpIndex, devIndex, qp->qpn, sendOffsets[r], reqs[r]->send.size);
       reqs[r]->send.sentData[qpIndex] = true;
     }
   }
@@ -441,15 +441,15 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, struct ncclIbRequest* r
   TRACE(NCCL_NET,
         "NET/IB: %s: Posting a CTS (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, "
         "qp_num=%u)",
-        __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
+        __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qpn);
 
   struct ibv_send_wr* bad_wr;
-  NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
+  NCCLCHECK(wrap_mrc_post_send(ctsQp->mrcQp, &wr, &bad_wr));
 
   TRACE(NCCL_NET,
         "NET/IB: %s: CTS posted (req=%p, comm=%p, id=%ld, slot=%d, nreqs=%d, wr_id=%ld, opcode=%d, send_flags=%d, "
         "qp_num=%u)",
-        __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qp->qp_num);
+        __func__, req, req->base, req->id, slot, req->nreqs, wr.wr_id, wr.opcode, wr.send_flags, ctsQp->qpn);
 
   return ncclSuccess;
 }
@@ -517,7 +517,8 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
     }
     // Post receive work request on the QP
     comm->ibRecvWorkRequest.wr_id = slot;
-    NCCLCHECK(ncclIbPostRecvWorkRequest(qp->qp, &comm->ibRecvWorkRequest));
+    struct ibv_recv_wr* badWr;
+    NCCLCHECK(wrap_mrc_post_recv(qp->mrcQp, &comm->ibRecvWorkRequest, &badWr));
 #ifdef NCCL_ENABLE_NET_PROFILING
     // Start a QP event for every request in the multirecv and every qp
     int qpIndex = qpIndexes[i];
@@ -529,7 +530,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, size_t* sizes, int*
       req->pInfo[r].data.type = ncclProfileQp;
       req->pInfo[r].data.qp.device = qp->devIndex;
       req->pInfo[r].data.qp.wr_id = comm->ibRecvWorkRequest.wr_id;
-      req->pInfo[r].data.qp.qpNum = qp->qp->qp_num;
+      req->pInfo[r].data.qp.qpNum = qp->qpn;
       NCCLCHECK(ncclProfilerFunction(&req->pInfo[r].qpEventHandles[nEventHandles], ncclProfilerNetEventStart,
                                      phandles[r], pluginId, &req->pInfo[r].data));
       req->pInfo[r].nEventHandles++;
@@ -759,7 +760,7 @@ static ncclResult_t ncclIbPostSpeedUpdateToRemote(struct ncclIbRecvComm* comm) {
   wr.wr.rdma.remote_addr = comm->remSpeedBufAddr;
   wr.wr.rdma.rkey = comm->base.remDevs[remDevIdx].remSpeedBufRkey;
   comm->postedSpeedUpdate = true;
-  NCCLCHECK(wrap_ibv_post_send(comm->base.qps[0].qp, &wr, &bad_wr));
+  NCCLCHECK(wrap_mrc_post_send(comm->base.qps[0].mrcQp, &wr, &bad_wr));
   memcpy(comm->lastSentSpeeds, newSpeedsGbps, nDevs * sizeof(uint16_t));
   comm->lastSentCounter = comm->speedUpdateBuf.counter;
   return ncclSuccess;
@@ -879,7 +880,8 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
         int qpIndex = -1;
         NCCLCHECK(ncclIbCommBaseGetQpByQpNum(commBase, devIndex, wc->qp_num, &qp, &qpIndex));
         req->recv.cmplsRecords->completions[qpIndex] = 1;
-        ncclIbPostRecvWorkRequest(qp->qp, &recvComm->ibRecvWorkRequest);
+        struct ibv_recv_wr* badWr;
+        NCCLCHECK(wrap_mrc_post_recv(qp->mrcQp, &recvComm->ibRecvWorkRequest, &badWr));
       }
       req->events[devIndex]--;
     } else if (wc->opcode == IBV_WC_RDMA_READ) {
@@ -950,7 +952,11 @@ ncclResult_t ncclIbTest(void* request, int* done, int* sizes) {
         continue;
       }
       TIME_START(3);
-      NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
+      if (r->type == NCCL_NET_IB_REQ_FLUSH) {
+        NCCLCHECK(wrap_ibv_poll_cq(r->devBases[i]->cq, 4, wcs, &wrDone));
+      } else {
+        NCCLCHECK(wrap_mrc_poll_cq(r->devBases[i]->mrcCq, 4, wcs, &wrDone));
+      }
       if (wrDone == 0) TIME_CANCEL(3);
       else TIME_STOP(3);
       totalWrDone += wrDone;

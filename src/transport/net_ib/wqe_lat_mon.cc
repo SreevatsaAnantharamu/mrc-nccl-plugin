@@ -302,7 +302,7 @@ static void reportStall(struct ncclIbNetCommBase* base, int devIndex, struct ncc
        "NET/IB: WQE stall (no CQE): peer=%s | local: qpn=%u dev=%s port=%u lid=%u localGid=%s | "
        "remote: qpn=%u port=%u lid=%u remoteGid=%s | "
        "stall_thr=%luns age=%luns inflight=%u",
-       p.sock, qp->qp->qp_num, p.hca, qp->rtrAttr.localIbPort, (unsigned)p.localLid, p.localGid,
+      p.sock, qp->qpn, p.hca, qp->rtrAttr.localIbPort, (unsigned)p.localLid, p.localGid,
        qp->rtrAttr.remoteQpNum, (unsigned)p.peerPort, (unsigned)p.remoteLid, p.remoteGid,
        (unsigned long)ncclIbWqeLatThresholdNs, (unsigned long)ageNs, inflight);
 }
@@ -345,7 +345,7 @@ void ncclIbWqeLatScanStalls(struct ncclIbNetCommBase* base, int devIndex) {
 
 void ncclIbWqeLatReportQpSummary(struct ncclIbNetCommBase* base, int devIndex, struct ncclIbQp* qp) {
   if (!ncclIbWqeLatEnabled || !ncclIbWqeLatReportEnabled) return;
-  if (qp == NULL || qp->qp == NULL || qp->latMon.count == 0) return;
+  if (qp == NULL || qp->qpn == 0 || qp->latMon.count == 0) return;
   struct ncclIbWqeLatStats s;
   ncclIbWqeLatMonSnapshot(&qp->latMon, &s);
   struct peerInfo p;
@@ -354,7 +354,7 @@ void ncclIbWqeLatReportQpSummary(struct ncclIbNetCommBase* base, int devIndex, s
        "NET/IB: WQE latency summary [%s peer=%s dev=%s qpn=%u port=%u]: "
        "n=%lu slow=%lu thr=%luns | post-to-poll ns: mean=%.0f std=%.0f "
        "p50=%lu p90=%lu p99=%lu p99.9=%lu max=%lu",
-       base->isSend ? "send" : "recv", p.sock, p.hca, qp->qp->qp_num, qp->rtrAttr.localIbPort, (unsigned long)s.count,
+      base->isSend ? "send" : "recv", p.sock, p.hca, qp->qpn, qp->rtrAttr.localIbPort, (unsigned long)s.count,
        (unsigned long)s.slowCount, (unsigned long)ncclIbWqeLatThresholdNs, s.meanNs, s.stddevNs, (unsigned long)s.p50Ns,
        (unsigned long)s.p90Ns, (unsigned long)s.p99Ns, (unsigned long)s.p999Ns, (unsigned long)s.maxNs);
 }

@@ -413,6 +413,7 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
             COMPILER_ATOMIC_STORE(&ncclIbDevs[ncclNIbDevs].currSpeed, (uint64_t)ncclIbDevs[ncclNIbDevs].speed,
                                   std::memory_order_relaxed);
             ncclIbDevs[ncclNIbDevs].context = context;
+            NCCLCHECKGOTO(wrap_mrc_create_context(context, &ncclIbDevs[ncclNIbDevs].mrcContext), ret, fail);
             ncclIbDevs[ncclNIbDevs].pdRefs = 0;
             ncclIbDevs[ncclNIbDevs].pd = NULL;
             // for dev==1 (data direct device), pciPath is given by mlx5
@@ -528,6 +529,10 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
                         ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
   ncclNetCommConfig_t* netCommConfig = nullptr;
+
+  ncclMrcSetLogger(logFunction);
+  ncclMrcLogInitOnce();
+
   NCCLCHECK(ncclIbInitDevices(logFunction, profFunction));
   NCCLCHECK(ncclIbPortRecoveryThreadStart());
   NCCLCHECK(ncclCalloc(&netCommConfig, 1));

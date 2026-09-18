@@ -6,4 +6,7 @@ all:
 clean:
 	$(MAKE) -C src OUTPUT=../$(TARGET) clean
 
-.PHONY: all clean
+test: all
+	$(MAKE) -C tests PLUGIN=$(abspath $(TARGET)) test
+
+.PHONY: all clean test

@@ -6,9 +6,7 @@
  *************************************************************************/
 
 #include "param.h"
-#include "param/param.h"
 #include "debug.h"
-#include "env.h"
 
 #include <algorithm>
 #include <errno.h>
@@ -72,7 +70,28 @@ void initEnv() {
 }
 
 static void ncclGetCachePolicy(char const* env, int8_t* noCache) {
-  *noCache = ncclParamIsCacheDisabled(env) ? /*noCache*/ 1 : /*cache*/ 0;
+  // The NCCL core's parameter registry and environment plugin are private.
+  // Keep the standalone plugin's cache policy and config-file handling local.
+  static std::once_flag once;
+  static std::unordered_set<std::string> uncached;
+  std::call_once(once, []() {
+    const char* value = ncclGetEnv("NCCL_NO_CACHE");
+    if (value == nullptr) return;
+    std::string list(value);
+    size_t start = 0;
+    while (start < list.size()) {
+      size_t end = list.find(',', start);
+      std::string key = list.substr(start, end - start);
+      size_t first = key.find_first_not_of(" \t\r\n");
+      if (first != std::string::npos) {
+        size_t last = key.find_last_not_of(" \t\r\n");
+        uncached.insert(key.substr(first, last - first + 1));
+      }
+      if (end == std::string::npos) break;
+      start = end + 1;
+    }
+  });
+  *noCache = strcmp(env, "NCCL_NO_CACHE") != 0 && (uncached.count("ALL") || uncached.count(env));
 }
 
 int64_t ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, int64_t* cache, int8_t* noCache) {
@@ -106,6 +125,6 @@ int64_t ncclLoadParam(char const* env, int64_t deftVal, int64_t uninitialized, i
 }
 
 const char* ncclGetEnv(const char* name) {
-  ncclInitEnv();
-  return ncclEnvPluginGetEnv(name);
+  initEnv();
+  return std::getenv(name);
 }

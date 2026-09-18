@@ -49,6 +49,10 @@ struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, in
 }
 
 ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend) {
+  if (ncclParamIbResiliencyPortFailover()) {
+    WARN("NET/IB: NCCL_IB_RESILIENCY_PORT_FAILOVER is not supported with MRC data QPs");
+    return ncclInvalidUsage;
+  }
   for (int i = 0; i < NCCL_IB_MAX_QPS; i++) {
     baseComm->qps[i].devIndex = -1;
     baseComm->qps[i].remDevIdx = -1;
@@ -242,7 +246,7 @@ void* ncclIbAsyncThreadMain(void* args) {
 }
 
 ncclNet_t ncclNetIb = {
-  "IB",
+  "MRC",
   ncclIbInit,
   ncclIbDevices,
   ncclIbGetProperties,

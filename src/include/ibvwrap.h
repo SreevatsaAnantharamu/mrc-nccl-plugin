@@ -15,6 +15,7 @@
 #else
 #include "ibvcore.h"
 #endif
+#include <mrc.h>
 
 #include "core.h"
 #include <sys/types.h>
@@ -40,6 +41,23 @@ ncclResult_t wrap_ibv_query_gid(struct ibv_context* context, uint8_t port_num, i
 ncclResult_t wrap_ibv_query_pkey(struct ibv_context* context, uint8_t port_num, int index, uint16_t* pkey);
 ncclResult_t wrap_ibv_query_qp(struct ibv_qp* qp, struct ibv_qp_attr* attr, int attr_mask,
                                struct ibv_qp_init_attr* init_attr);
+ncclResult_t wrap_mrc_create_context(struct ibv_context* context, struct mrc_context** mrcContext);
+ncclResult_t wrap_mrc_destroy_context(struct mrc_context* mrcContext);
+ncclResult_t wrap_mrc_create_cq(struct mrc_cq** ret, struct mrc_context* mrcContext, int cqe, void* cqContext,
+                                struct mrc_comp_channel* channel, int compVector);
+ncclResult_t wrap_mrc_destroy_cq(struct mrc_cq* cq);
+ncclResult_t wrap_mrc_create_qp_hint(struct mrc_qp_hint** ret, struct mrc_context* mrcContext,
+                                     struct mrc_qp_hint_init_attr* hintInitAttr);
+ncclResult_t wrap_mrc_destroy_qp_hint(struct mrc_qp_hint* hint);
+ncclResult_t wrap_mrc_create_qp(struct mrc_qp** ret, struct mrc_context* mrcContext,
+                                struct mrc_qp_init_attr* qpInitAttr);
+ncclResult_t wrap_mrc_modify_qp(struct mrc_qp* qp, struct ibv_qp_attr* attr, int attrMask,
+                                struct mrc_qp_attr* mrcAttr, int mrcAttrMask);
+ncclResult_t wrap_mrc_destroy_qp(struct mrc_qp* qp);
+ncclResult_t wrap_mrc_get_qpn(struct mrc_qp* qp, uint32_t* qpn);
+ncclResult_t wrap_mrc_post_send(struct mrc_qp* qp, struct ibv_send_wr* wr, struct ibv_send_wr** badWr);
+ncclResult_t wrap_mrc_post_recv(struct mrc_qp* qp, struct ibv_recv_wr* wr, struct ibv_recv_wr** badWr);
+ncclResult_t wrap_mrc_poll_cq(struct mrc_cq* cq, int numEntries, struct ibv_wc* wc, int* numDone);
 ncclResult_t wrap_ibv_alloc_pd(struct ibv_pd** ret, struct ibv_context* context);
 ncclResult_t wrap_ibv_dealloc_pd(struct ibv_pd* pd);
 ncclResult_t wrap_ibv_reg_mr(struct ibv_mr** ret, struct ibv_pd* pd, void* addr, size_t length, int access);
@@ -72,7 +90,7 @@ ncclResult_t wrap_ibv_modify_qp(struct ibv_qp* qp, struct ibv_qp_attr* attr, int
 ncclResult_t wrap_ibv_destroy_qp(struct ibv_qp* qp);
 ncclResult_t wrap_ibv_query_ece(struct ibv_qp* qp, struct ibv_ece* ece, int* supported);
 ncclResult_t wrap_ibv_set_ece(struct ibv_qp* qp, struct ibv_ece* ece, int* supported);
-ncclResult_t wrap_ibv_query_port_speed(struct ibv_context* context, uint8_t port_num, uint64_t* speed);
+ncclResult_t wrap_ibv_query_port_speed(struct ibv_context* context, uint32_t port_num, uint64_t* speed);
 
 static inline ncclResult_t wrap_ibv_post_send(struct ibv_qp* qp, struct ibv_send_wr* wr, struct ibv_send_wr** bad_wr) {
   int ret = qp->context->ops.post_send(
