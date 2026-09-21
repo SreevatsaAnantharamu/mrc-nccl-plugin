@@ -21,7 +21,7 @@ uint64_t ncclIbSpeedChangeCounter = 0;
 ncclProfilerCallback_t ncclProfilerFunction;
 
 NCCL_PARAM(IbSplitDataOnQps, "IB_SPLIT_DATA_ON_QPS", 0);
-NCCL_PARAM(IbPrepostReceiveWorkRequests, "IB_PREPOST_RECEIVE_WORK_REQUESTS", -2);
+NCCL_PARAM(IbPrepostReceiveWorkRequests, "MRC_PREPOST_RECEIVE_WORK_REQUESTS", 1);
 NCCL_PARAM(IbAsyncEvents, "IB_RETURN_ASYNC_EVENTS", 1);
 NCCL_PARAM(IbEventBasedLb, "IB_EVENT_BASED_LB", 0);
 NCCL_PARAM(IbEventBasedLbRemote, "IB_EVENT_BASED_LB_REMOTE", 1);

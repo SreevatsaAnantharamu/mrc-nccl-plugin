@@ -12,6 +12,7 @@ These environment variables control MRC (Multi-Path Reliable Connection) behavio
 | `NCCL_MRC_RETRY_CNT_EXP` | 25 | 0–25 | Exponential-backoff retry limit. A value of 25 means infinite retries. Currently unsupported by vendor specific mrc.h |
 | `NCCL_MRC_QP_HINT_ENABLE` | 1 | 0–1 | Enables a hint for each MRC data/CTS QP on both send and receive connections. Set to 0 to skip all QP and CC hints. Ordinary verbs GPU-flush QPs never receive MRC hints. |
 | `NCCL_MRC_MULTI_RECV_ENABLE` | 1 | 0–1 | Enables grouped receives of up to eight tags. Enabled by default. Set `NCCL_MRC_MULTI_RECV_ENABLE=0` to disable grouped receives. |
+| `NCCL_MRC_PREPOST_RECEIVE_WORK_REQUESTS` | 1 | -2 or 1 | Set to -2 to disable preposting. Leave as 1 to enable preposting. |
 
 ## Memory Registration Parameters
 
