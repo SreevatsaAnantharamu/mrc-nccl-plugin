@@ -12,6 +12,7 @@
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbDataDirect, "IB_DATA_DIRECT", 1);
+NCCL_PARAM(MrcMultiRecvEnable, "MRC_MULTI_RECV_ENABLE", 1);
 
 // default to 0 to disable ooo rq, if set to 1, ooo rq will be enabled or failed
 NCCL_PARAM(IbOooRq, "IB_OOO_RQ", 0)
@@ -574,7 +575,7 @@ ncclResult_t ncclIbGetPhysProperties(int dev, ncclNetProperties_t* props) {
   props->latency = 0; // Not set
   props->port = ibDev->portNum + ibDev->realPort;
   props->maxComms = ibDev->maxQp;
-  props->maxRecvs = NCCL_NET_IB_MAX_RECVS;
+  props->maxRecvs = ncclParamMrcMultiRecvEnable() ? NCCL_NET_IB_MAX_RECVS : 1;
   props->netDeviceType = NCCL_NET_DEVICE_HOST;
   props->netDeviceVersion = NCCL_NET_DEVICE_INVALID_VERSION;
   props->maxP2pBytes = NCCL_MAX_NET_SIZE_BYTES;
