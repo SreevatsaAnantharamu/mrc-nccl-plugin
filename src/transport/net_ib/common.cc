@@ -149,24 +149,6 @@ static ncclResult_t ncclIbEventGidChange(struct ncclIbDev* dev) {
   return ncclSuccess;
 }
 
-static void ncclIbUpdateDeviceSpeed(struct ncclIbDev* dev) {
-  uint64_t oldSpeed = COMPILER_ATOMIC_LOAD(&dev->currSpeed, std::memory_order_relaxed);
-  uint64_t newSpeed = 0;
-  if (wrap_ibv_query_port_speed(dev->context, dev->portNum, &newSpeed) != ncclSuccess) return;
-
-  // In cases of port failover, the speed change event is ignored and will be considered as a port fail event
-  if (newSpeed == 0) return;
-  // ibv_query_port_speed returns speed in granularity of 100 Mbps
-  newSpeed *= 100;
-
-  if (newSpeed != oldSpeed) {
-    INFO(NCCL_NET, "NET/IB : %s:%d speed change detected: %lu -> %lu Mbps", dev->devName, dev->portNum,
-         (unsigned long)oldSpeed, (unsigned long)newSpeed);
-    COMPILER_ATOMIC_STORE(&dev->currSpeed, newSpeed, std::memory_order_relaxed);
-    COMPILER_ATOMIC_FETCH_ADD(&ncclIbSpeedChangeCounter, (uint64_t)1, std::memory_order_release);
-  }
-}
-
 std::thread ncclIbAsyncThread;
 void* ncclIbAsyncThreadMain(void* args) {
   struct ncclIbDev* dev = (struct ncclIbDev*)args;
@@ -216,9 +198,6 @@ void* ncclIbAsyncThreadMain(void* args) {
              dev->portNum);
         ncclIbDevFatalError(dev);
       }
-      break;
-    case IBV_EVENT_DEVICE_SPEED_CHANGE:
-      ncclIbUpdateDeviceSpeed(dev);
       break;
     case IBV_EVENT_PATH_MIG_ERR:
     case IBV_EVENT_PORT_ERR:

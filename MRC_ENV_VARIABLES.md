@@ -24,9 +24,9 @@ These environment variables control MRC (Multi-Path Reliable Connection) behavio
 
 | Variable | Default | Range | Description |
 |---|---|---|---|
-| `NCCL_MRC_CC_INIT_RATE` | 0 | 0–4294967295 | Initial congestion-control rate, passed unchanged to each QP. |
-| `NCCL_MRC_CC_MIN_RATE` | 0 | 0+ | Connection-wide minimum, divided (integer division) by the total negotiated QP count across all merged devices. The resulting per-QP value must fit `uint32_t`. |
-| `NCCL_MRC_CC_MAX_RATE` | 0 | 0–4294967295 | Maximum congestion-control rate, passed unchanged to each QP. |
+| `NCCL_MRC_CC_INIT_RATE` | 0 | 0–1048576 | Initial congestion-control rate, passed unchanged to each QP. |
+| `NCCL_MRC_CC_MIN_RATE` | 0 | 0-1048576 | Connection-wide minimum, divided (integer division) by the total negotiated QP count across all merged devices. The resulting per-QP value must fit `uint32_t`. |
+| `NCCL_MRC_CC_MAX_RATE` | 0 | 0–1048576 | Maximum congestion-control rate, passed unchanged to each QP. |
 
 The rebased plugin preserves the legacy version-1 CC payload: if any effective rate is nonzero, all three are packed into the hint's vendor configuration. If all are zero, the vendor configuration remains zero and provider CC defaults apply, but topology hints are still created when `NCCL_MRC_QP_HINT_ENABLE=1`.
 
@@ -34,5 +34,4 @@ Each hint advertises `num_qps_per_peer` equal to the connection's negotiated QP 
 
 ## Rebased Plugin Diagnostics
 
-- Port speed is queried through the optional `ibv_query_port_speed` API when available. Unsupported-provider responses fall back to ordinary port attributes without a warning, matching the legacy plugin's speed calculation. Other query failures still warn. `NCCL_IB_QUERY_PORT_SPEED=0` skips the optional query.
 - The initialization banner uses NCCL `INFO` logging once on global rank zero, identified from `OMPI_COMM_WORLD_RANK`, `PMI_RANK`, `PMIX_RANK`, `RANK`, or `SLURM_PROCID` (in that order). It respects `NCCL_DEBUG`/`NCCL_DEBUG_SUBSYS`. When no global rank is known, the optional banner is omitted rather than repeated on every process.

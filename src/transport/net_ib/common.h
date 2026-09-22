@@ -399,9 +399,7 @@ struct alignas(32) ncclIbNetCommBase {
 // Compute per-device LB weights (1-100); weight is never 0 since it is not considered a speed update but rather a port down.
 static inline void ncclIbComputeLbWeights(struct ncclIbNetCommBase* base) {
   int ndevs = base->vProps.ndevs;
-  // totalSpeed can not be 0: devices with inactive ports (speed 0) are
-  // skipped at init, and speed-to-zero events are skipped in
-  // ncclIbUpdateDeviceSpeed (port-failover handles those).
+  // totalSpeed can not be 0: devices with inactive ports (speed 0) are skipped at init.
   uint8_t totalWeight = 0;
   for (int d = 0; d < ndevs; d++) {
     base->weights[d] = ncclParamIbEventBasedLb() ? (base->devSpeeds[d] * 100 / base->totalSpeed) : (100 / ndevs);

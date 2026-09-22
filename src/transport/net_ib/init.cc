@@ -405,14 +405,8 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
             ncclIbDevs[ncclNIbDevs].portNum = port_num;
             ncclIbDevs[ncclNIbDevs].link = portAttr.link_layer;
             // A non-zero active_speed_ex indicates XDR rate (0x100) or higher
-            uint64_t querySpeed = 0;
-            if (wrap_ibv_query_port_speed(context, port_num, &querySpeed) == ncclSuccess) {
-              // ibv_query_port_speed returns speed in granularity of 100 Mbps
-              ncclIbDevs[ncclNIbDevs].speed = querySpeed * 100;
-            } else {
-              int portSpeed = portAttr.active_speed_ex ? portAttr.active_speed_ex : portAttr.active_speed;
-              ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portSpeed) * ncclIbWidth(portAttr.active_width);
-            }
+            int portSpeed = portAttr.active_speed_ex ? portAttr.active_speed_ex : portAttr.active_speed;
+            ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portSpeed) * ncclIbWidth(portAttr.active_width);
             ncclIbDevs[ncclNIbDevs].speed *= NIC_VF_MERGE_FACTOR;
             COMPILER_ATOMIC_STORE(&ncclIbDevs[ncclNIbDevs].currSpeed, (uint64_t)ncclIbDevs[ncclNIbDevs].speed,
                                   std::memory_order_relaxed);

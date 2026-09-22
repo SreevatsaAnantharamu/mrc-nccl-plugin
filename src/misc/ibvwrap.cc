@@ -98,7 +98,6 @@ ncclResult_t wrap_ibv_symbols(void) {
 NCCL_PARAM(IbMQpRetryAll, "IB_MQP_RETRY_ALL", 0);
 NCCL_PARAM(IbMQpRetryCnt, "IB_MQP_RETRY_CNT", 34);
 NCCL_PARAM(IbMQpRetryTimeout, "IB_MQP_RETRY_SLEEP_MSEC", 100); // in milliseconds
-NCCL_PARAM(IbQueryPortSpeed, "IB_QUERY_PORT_SPEED", 1);
 
 #define IBV_ERR_EQ(e, code) (e == code || e == (-code))
 #define IBV_MQP_RETRY_ERRNO(e) (IBV_ERR_EQ(e, ETIMEDOUT))
@@ -534,27 +533,6 @@ ncclResult_t wrap_ibv_set_ece(
   int* supported) { /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
   IBV_INT_CHECK_RET_ERRNO_OPTIONAL(ibvSymbols, ibv_internal_set_ece, ibv_internal_set_ece(qp, ece), 0, "ibv_set_ece",
                                    supported);
-}
-
-ncclResult_t wrap_ibv_query_port_speed(struct ibv_context* context, uint32_t port_num, uint64_t* speed) {
-  *speed = 0;
-  if (!ncclParamIbQueryPortSpeed() || ibvSymbols.ibv_internal_query_port_speed == NULL) {
-    return ncclSystemError;
-  }
-  int ret = ibvSymbols.ibv_internal_query_port_speed(context, port_num, speed);
-  if (ret == 0) return ncclSuccess;
-
-  int error = ret == -1 ? errno : (ret < 0 ? -ret : ret);
-  *speed = 0;
-  // A present rdma-core symbol does not imply support in the device/provider.
-  // Initialization already falls back to active_speed[_ex] and active_width,
-  // which is how the legacy MRC plugin always determined the port speed.
-  if (error == EOPNOTSUPP || error == EPROTONOSUPPORT || error == ENOSYS) {
-    INFO(NCCL_NET, "NET/IB : ibv_query_port_speed unsupported on port %u; using port attributes", port_num);
-  } else {
-    WARN("Call to ibv_query_port_speed failed with error %s errno %d", strerror(error), error);
-  }
-  return ncclSystemError;
 }
 
 ncclResult_t wrap_ibv_event_type_str(char** ret, enum ibv_event_type event) {
