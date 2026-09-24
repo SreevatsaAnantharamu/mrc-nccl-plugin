@@ -5,6 +5,9 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #include "common.h"
 #include "p2p_resiliency.h"
 

@@ -5,6 +5,9 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #ifndef NET_IB_COMMON_H_
 #define NET_IB_COMMON_H_
 

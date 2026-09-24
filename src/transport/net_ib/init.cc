@@ -5,6 +5,9 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #include "common.h"
 #include "p2p_resiliency_recovery.h"
 #include "version.h"
@@ -407,14 +410,11 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
             int portSpeed = portAttr.active_speed_ex ? portAttr.active_speed_ex : portAttr.active_speed;
             ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portSpeed) * ncclIbWidth(portAttr.active_width);
             int64_t speed_scaling = ncclParamMrcNumPlanes();
+            INFO(NCCL_NET, "NET/IB: NCCL_MRC_NUM_PLANES is set to %ld", speed_scaling);
             if (speed_scaling == 0 || speed_scaling < 0) {
-              WARN("NET/IB: NCCL_MRC_NUM_PLANES is set to %ld, defaulting to 1", speed_scaling);
+              WARN("NET/IB: NCCL_MRC_NUM_PLANES is set to %ld, using 1 instead", speed_scaling);
               speed_scaling = 1;
             }
-            else {
-              INFO(NCCL_NET, "NET/IB: NCCL_MRC_NUM_PLANES is set to %ld", speed_scaling);
-            }
-        
             ncclIbDevs[ncclNIbDevs].speed *= speed_scaling;
             COMPILER_ATOMIC_STORE(&ncclIbDevs[ncclNIbDevs].currSpeed, (uint64_t)ncclIbDevs[ncclNIbDevs].speed,
                                   std::memory_order_relaxed);

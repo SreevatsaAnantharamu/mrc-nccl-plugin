@@ -5,6 +5,9 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #ifndef NCCL_IBVWRAP_H_
 #define NCCL_IBVWRAP_H_
 

@@ -5,6 +5,9 @@
  * See LICENSE.txt for more license information
  *************************************************************************/
 
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 #include "p2p.h"
 #include "common.h"
 #include "compiler.h"
