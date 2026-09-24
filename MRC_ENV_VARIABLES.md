@@ -35,3 +35,7 @@ Each hint advertises `num_qps_per_peer` equal to the connection's negotiated QP 
 ## Rebased Plugin Diagnostics
 
 - The initialization banner uses NCCL `INFO` logging once on global rank zero, identified from `OMPI_COMM_WORLD_RANK`, `PMI_RANK`, `PMIX_RANK`, `RANK`, or `SLURM_PROCID` (in that order). It respects `NCCL_DEBUG`/`NCCL_DEBUG_SUBSYS`. When no global rank is known, the optional banner is omitted rather than repeated on every process.
+
+## Speed scaling
+
+Since MRC-enabled VF is created from first PF, it inherits the speed of just the first PF. `NCCL_MRC_NUM_PLANES` scales the effective speed by the number of planes. Its default is 8.

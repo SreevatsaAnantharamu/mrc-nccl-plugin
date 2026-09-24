@@ -12,6 +12,7 @@
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
 NCCL_PARAM(IbDataDirect, "IB_DATA_DIRECT", 1);
 NCCL_PARAM(MrcMultiRecvEnable, "MRC_MULTI_RECV_ENABLE", 1);
+NCCL_PARAM(MrcNumPlanes, "MRC_NUM_PLANES", 8);
 
 // default to 0 to disable ooo rq, if set to 1, ooo rq will be enabled or failed
 NCCL_PARAM(IbOooRq, "IB_OOO_RQ", 0)
@@ -285,7 +286,6 @@ ncclResult_t ncclIbFinalizeDevices(void) {
 }
 
 extern int64_t ncclIbArThreshold;
-#define NIC_VF_MERGE_FACTOR 8
 ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallback_t profFunction) {
   ncclResult_t ret = ncclSuccess;
   if (netRefCount++) return ret;
@@ -406,7 +406,16 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
             // A non-zero active_speed_ex indicates XDR rate (0x100) or higher
             int portSpeed = portAttr.active_speed_ex ? portAttr.active_speed_ex : portAttr.active_speed;
             ncclIbDevs[ncclNIbDevs].speed = ncclIbSpeed(portSpeed) * ncclIbWidth(portAttr.active_width);
-            ncclIbDevs[ncclNIbDevs].speed *= NIC_VF_MERGE_FACTOR;
+            int64_t speed_scaling = ncclParamMrcNumPlanes();
+            if (speed_scaling == 0 || speed_scaling < 0) {
+              WARN("NET/IB: NCCL_MRC_NUM_PLANES is set to %ld, defaulting to 1", speed_scaling);
+              speed_scaling = 1;
+            }
+            else {
+              INFO(NCCL_NET, "NET/IB: NCCL_MRC_NUM_PLANES is set to %ld", speed_scaling);
+            }
+        
+            ncclIbDevs[ncclNIbDevs].speed *= speed_scaling;
             COMPILER_ATOMIC_STORE(&ncclIbDevs[ncclNIbDevs].currSpeed, (uint64_t)ncclIbDevs[ncclNIbDevs].speed,
                                   std::memory_order_relaxed);
             ncclIbDevs[ncclNIbDevs].context = context;
