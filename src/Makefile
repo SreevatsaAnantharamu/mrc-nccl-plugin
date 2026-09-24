@@ -8,7 +8,6 @@
 # See LICENSE.txt for more license information
 #
 
-
 # Build the NCCL NET plugin from the imported include, misc, and transport trees.
 
 DEBUG ?= 0
