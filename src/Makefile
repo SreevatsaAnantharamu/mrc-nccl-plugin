@@ -17,6 +17,9 @@ MRC_LIBDIR ?= $(MRC_HOME)/lib/aarch64-linux-gnu
 PYTHON ?= python3
 
 CXX ?= g++
+ifneq ($(NCCL_HOME),)
+CPPFLAGS += -I$(NCCL_HOME)/include
+endif
 CPPFLAGS += -I. -Iinclude -Iinclude/plugin -I$(MRC_HOME)/include
 CPPFLAGS += -I$(CUDA_HOME)/include -I$(CUDA_HOME)/include/cccl
 CPPFLAGS += -DNCCL_OS_LINUX -DNCCL_BUILD_RDMA_CORE -DNCCL_COMM_H_ -DncclNetIb=ncclNetPlugin_v12
