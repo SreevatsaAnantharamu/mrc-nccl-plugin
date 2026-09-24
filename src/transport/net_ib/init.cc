@@ -10,7 +10,6 @@
 #include "version.h"
 
 NCCL_PARAM(IbPciRelaxedOrdering, "IB_PCI_RELAXED_ORDERING", 2);
-NCCL_PARAM(IbAdaptiveRouting, "IB_ADAPTIVE_ROUTING", -2);
 NCCL_PARAM(IbDataDirect, "IB_DATA_DIRECT", 1);
 NCCL_PARAM(MrcMultiRecvEnable, "MRC_MULTI_RECV_ENABLE", 1);
 
@@ -438,9 +437,7 @@ ncclResult_t ncclIbInitDevices(ncclDebugLogger_t logFunction, ncclProfilerCallba
             ncclIbDevs[ncclNIbDevs].planeId = (userIfId >= 0) ? userIfs[userIfId].plane : -1;
 
             // Enable ADAPTIVE_ROUTING by default on IB networks
-            // But allow it to be overloaded by an env parameter
-            ncclIbDevs[ncclNIbDevs].ar = (portAttr.link_layer == IBV_LINK_LAYER_INFINIBAND) ? 1 : 0;
-            if (ncclParamIbAdaptiveRouting() != -2) ncclIbDevs[ncclNIbDevs].ar = ncclParamIbAdaptiveRouting();
+            ncclIbDevs[ncclNIbDevs].ar = 0;
 
             NCCLCHECKGOTO(ncclIbGidInfoQuery(context, port_num, &portAttr, &ncclIbDevs[ncclNIbDevs].gidInfo), ret,
                           fail);
