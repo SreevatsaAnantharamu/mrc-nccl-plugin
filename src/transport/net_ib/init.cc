@@ -530,7 +530,7 @@ ncclResult_t ncclIbInit(void** ctx, uint64_t commId, ncclNetCommConfig_t* config
   // Initialization code that should run only once
   static std::once_flag initFlag;
   std::call_once(initFlag, []() {
-    WARN("NET/MRC: Initializing MRC plugin version %d.%d.%d", 
+    INFO(NCCL_INIT | NCCL_NET, "NET/MRC: Initializing MRC plugin version %d.%d.%d",
       MRC_NCCL_PLUGIN_VERSION_MAJOR, MRC_NCCL_PLUGIN_VERSION_MINOR, MRC_NCCL_PLUGIN_VERSION_PATCH);
   });
 
