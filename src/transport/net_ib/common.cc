@@ -245,7 +245,7 @@ ncclNet_t ncclNetIb = {
   ncclIbCloseListen,
   NULL /* getDeviceMr */,
   NULL /* irecvConsumed */,
-  NULL /* makeVDevice */,
+  ncclIbMakeVDevice,
   ncclIbFinalize,
   ncclIbSetNetAttr,
 };
