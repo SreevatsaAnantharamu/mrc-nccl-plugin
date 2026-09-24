@@ -21,6 +21,8 @@ Debug build
 make MRC_HOME=/path/to/mrc CUDA_HOME=/path/to/cuda DEBUG=1
 ```
 
+To supply `nccl.h` from a custom NCCL installation, add `NCCL_HOME=/path/to/nccl/build` to the make command. `nccl.h` will be included from `$(NCCL_HOME)/include`.
+
 libnccl-net-mrc.so will be generated after building, with `mrc` as the suffix of the plugin library.
 
 The plugin links its own Linux support, logger adapter, parameter handling, and CUDA runtime. It does not depend on private symbols exported by libnccl. Only `ncclNetPlugin_v12` is exported; unresolved references are rejected at link time. Set `PYTHON` to a Python 3 executable if needed.
