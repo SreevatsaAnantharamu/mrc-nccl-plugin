@@ -50,8 +50,7 @@ struct ncclIbNetCommDevBase* ncclIbGetNetCommDevBase(ncclIbNetCommBase* base, in
 
 ncclResult_t ncclIbBaseCommInit(struct ncclIbNetCommBase* baseComm, bool isSend) {
   if (ncclParamIbResiliencyPortFailover()) {
-    WARN("NET/IB: NCCL_IB_RESILIENCY_PORT_FAILOVER is not supported with MRC data QPs");
-    return ncclInvalidUsage;
+    WARN("NET/IB: NCCL_IB_RESILIENCY_PORT_FAILOVER is not supported currently with MRC data QPs; ignoring this parameter");
   }
   for (int i = 0; i < NCCL_IB_MAX_QPS; i++) {
     baseComm->qps[i].devIndex = -1;
