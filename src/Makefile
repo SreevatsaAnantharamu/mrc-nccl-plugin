@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+
 #
 # SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -5,8 +8,6 @@
 # See LICENSE.txt for more license information
 #
 
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
 
 # Build the NCCL NET plugin from the imported include, misc, and transport trees.
 

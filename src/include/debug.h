@@ -1,12 +1,12 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 /*************************************************************************
  * SPDX-FileCopyrightText: Copyright (c) 2015-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  * See LICENSE.txt for more license information
  *************************************************************************/
-
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
 
 #ifndef NCCL_INT_DEBUG_H_
 #define NCCL_INT_DEBUG_H_
