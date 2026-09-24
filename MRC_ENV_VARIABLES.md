@@ -25,7 +25,7 @@ These environment variables control MRC (Multi-Path Reliable Connection) behavio
 | Variable | Default | Range | Description |
 |---|---|---|---|
 | `NCCL_MRC_CC_INIT_RATE` | 0 | 0–1048576 | Initial congestion-control rate, passed unchanged to each QP. |
-| `NCCL_MRC_CC_MIN_RATE` | 0 | 0-1048576 | Connection-wide minimum, divided (integer division) by the total negotiated QP count across all merged devices. The resulting per-QP value must fit `uint32_t`. |
+| `NCCL_MRC_CC_MIN_RATE` | 0 | 0-1048576 | Connection-wide minimum, divided (integer division) by the total negotiated QP count across all merged devices. |
 | `NCCL_MRC_CC_MAX_RATE` | 0 | 0–1048576 | Maximum congestion-control rate, passed unchanged to each QP. |
 
 The rebased plugin preserves the legacy version-1 CC payload: if any effective rate is nonzero, all three are packed into the hint's vendor configuration. If all are zero, the vendor configuration remains zero and provider CC defaults apply, but topology hints are still created when `NCCL_MRC_QP_HINT_ENABLE=1`.
