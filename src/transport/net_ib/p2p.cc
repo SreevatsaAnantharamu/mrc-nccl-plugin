@@ -678,7 +678,8 @@ static inline ncclResult_t ncclIbRequestRetrieveFromCompletion(struct ncclIbNetC
 
 static inline ncclResult_t ncclIbRequestIsComplete(struct ncclIbRequest* request, bool* complete) {
   *complete =
-    (request->events[0] == 0 && request->events[1] == 0 && request->events[2] == 0 && request->events[3] == 0);
+    (request->events[0] == 0 && request->events[1] == 0 && request->events[2] == 0 && request->events[3] == 0 &&
+     request->events[4] == 0 && request->events[5] == 0 && request->events[6] == 0 && request->events[7] == 0);
   if (!*complete && request->base->resiliency) {
     NCCLCHECK(ncclIbResiliencyRequestIsComplete(request, complete));
   }
@@ -816,10 +817,11 @@ static inline ncclResult_t ncclIbCompletionEventProcess(struct ncclIbNetCommBase
 #ifdef ENABLE_TRACE
   char line[SOCKET_NAME_MAXLEN + 1];
   TRACE(NCCL_NET,
-        "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d events={%d,%d,%d,%d}, "
-        "devIndex=%d",
+        "Got completion from peer %s with status=%d opcode=%d len=%u wr_id=%lu r=%p type=%d "
+        "events={%d,%d,%d,%d,%d,%d,%d,%d}, devIndex=%d",
         ncclSocketToString(&addr, line), wc->status, wc->opcode, wc->byte_len, wc->wr_id, req, req->type,
-        req->events[0], req->events[1], req->events[2], req->events[3], devIndex);
+        req->events[0], req->events[1], req->events[2], req->events[3], req->events[4], req->events[5], req->events[6],
+        req->events[7], devIndex);
 #endif
 
   if (commBase->isSend) {
