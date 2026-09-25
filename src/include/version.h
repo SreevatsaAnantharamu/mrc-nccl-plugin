@@ -8,5 +8,6 @@
 #define MRC_NCCL_PLUGIN_VERSION_MINOR 1
 #define MRC_NCCL_PLUGIN_VERSION_PATCH 1
 
+const char* ncclGetGitVersion(void);
 
 #endif /* MRC_NCCL_PLUGIN_VERSION_H */

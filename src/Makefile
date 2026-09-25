@@ -49,7 +49,7 @@ $(OUTPUT): $(OBJS) nccl-net-mrc.map Makefile
 	@printf "Linking    %-35s > %s\n" $(notdir $@) $@
 	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-$(OBJDIR)/misc/git_version.o: $(GIT_VERSION_FILE)
+$(OBJDIR)/misc/git_version.o $(OBJDIR)/transport/net_ib/init.o: $(GIT_VERSION_FILE)
 
 $(GIT_VERSION_FILE): FORCE
 	@mkdir -p $(dir $@)

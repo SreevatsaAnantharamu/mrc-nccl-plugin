@@ -23,27 +23,10 @@ make MRC_HOME=/path/to/mrc CUDA_HOME=/path/to/cuda DEBUG=1
 
 To supply `nccl.h` from a custom NCCL installation, add `NCCL_HOME=/path/to/nccl/build` to the make command. `nccl.h` will be included from `$(NCCL_HOME)/include`.
 
-libnccl-net-mrc.so will be generated after building, with `mrc` as the suffix of the plugin library.
-
-The plugin links its own Linux support, logger adapter, parameter handling, and CUDA runtime. It does not depend on private symbols exported by libnccl. Only `ncclNetPlugin_v12` is exported; unresolved references are rejected at link time. Set `PYTHON` to a Python 3 executable if needed.
-
-Hardware-free regression tests:
-
-The load test uses `RTLD_NOW` without linking the test executable to libnccl or CUDA. Additional tests cover MRC INIT/RTR/RTS masks, the ordinary verbs GPU-flush path, optional port-speed queries, NCCL logger callback forwarding, and QP/CC hint payloads and failure cleanup. See [MRC_ENV_VARIABLES.md](MRC_ENV_VARIABLES.md) for the hint toggles and per-QP rate semantics.
+`libnccl-net-mrc.so` will be generated after building. `mrc` is the suffix of the plugin library.
 
 ## Run (NCCL)
 
-NCCL loads external plugins via the `NCCL_NET_PLUGIN` environment variable. It can be set to either
-a suffix string or to a library name.
+NCCL loads external plugins via the `NCCL_NET_PLUGIN` environment variable. If `NCCL_NET_PLUGIN` is set as `libnccl-net-mrc.so` or just as the suffix `mrc`, add the folder containing the plugin library to your `LD_LIBRARY_PATH`. Instead, `NCCL_NET_PLUGIN` can be set to the absolute path, for e.g., `/path/to/libnccl-net-mrc.so`.
 
-Example:
-
-```bash
-export NCCL_NET_PLUGIN=$PWD/libnccl-net-mrc.so
-```
-or
-```bash
-export NCCL_NET_PLUGIN=mrc
-```
-
-Deploy the same rebuilt library at the selected path on **every MPI node**. With `NCCL_DEBUG=INFO`, verify `Loaded net plugin MRC (v12)` and `Using network MRC`. A `NET/Plugin` load error followed by `Using network IB` means NCCL fell back to its built-in transport; subsequent IB CQE errors do not establish a failure in the MRC data path. Setting `NCCL_NET=MRC` (and forwarding it to every rank) makes such fallback fail explicitly instead.
+With `NCCL_DEBUG=INFO`, verify `Loaded net plugin MRC (v12)`, `Using network MRC`. For the version of mrc-nccl-plugin being used, look for `Initializing MRC plugin version` string and the plugin version and the git version will follow it. A `NET/Plugin` load error followed by `Using network IB` means NCCL fell back to its built-in transport; subsequent IB CQE errors do not establish a failure in the MRC data path. Setting `NCCL_NET=MRC` (and forwarding it to every rank) makes such fallback fail explicitly instead. 
